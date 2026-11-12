@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { estimateTaskTokens, estimateTextTokens, formatTokens } from "../lib/estimate.js";
-import { applyPriors, appendDispatch, loadOutcomes, priorsFrom, saveOutcomes, settleFromEvents } from "../lib/outcome.js";
+import { applyPriors, appendDispatch, classifyFollowUp, loadOutcomes, priorsFrom, priorRow, saveOutcomes, settleFromEvents } from "../lib/outcome.js";
 import { buildRow, combineRows, normalizePlan, parsePlan, qualityOf, rankRows, suggestEffort } from "../lib/plan.js";
 import { renderReport, truncate } from "../lib/render.js";
 
@@ -348,8 +348,7 @@ test("applyPriors calibrates estimates only past the dispatch floor", () => {
   assert.deepEqual(applied, ["p/a ×1.25 (3)"]);
 });
 
-test("outcome records round-trip through the JSONL log", () => {
-  const dir = join(tmpBase, "outcomes-roundtrip");
+test("outcome records round-trip through the JSONL log", () => {  const dir = join(tmpBase, "outcomes-roundtrip");
   rmSync(dir, { recursive: true, force: true });
   appendDispatch(dir, { messageId: "scout-rt-1", route: "p/m", predictedTokens: 1, dispatchedAt: 1 });
   appendDispatch(dir, { messageId: "", route: "p/m", dispatchedAt: 2 }); // rejected: no id
@@ -366,6 +365,63 @@ test("outcome records round-trip through the JSONL log", () => {
   saveOutcomes(dir, loaded);
   assert.equal(loadOutcomes(dir)[0].actualTokens, 50);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("classifyFollowUp spots re-asks by complaint word or task overlap", () => {
+  const task = "把 config loader 改成支持 .toml 并补测试";
+  assert.equal(classifyFollowUp(task, ""), "none");
+  assert.equal(classifyFollowUp(task, undefined), "none");
+  assert.equal(classifyFollowUp(task, "还是不行，再来一次"), "reask", "explicit complaint");
+  assert.equal(classifyFollowUp(task, "retry, it failed"), "reask");
+  assert.equal(classifyFollowUp(task, "把 config loader 改成支持 .toml 并补测试，刚才没做"), "reask", "task repeated verbatim");
+  assert.equal(classifyFollowUp(task, "很好，接着把日志也改了吧"), "continuation", "different work");
+  assert.equal(classifyFollowUp("push to github and add a description", "now update the About section"), "continuation");
+});
+
+test("settleFromEvents records the follow-up classification", () => {
+  const base = [
+    { type: "user/message", file: 1, time: 100, data: { id: "scout-fu-1", role: "user", content: [{ type: "text", text: "修好那个 bug" }] } },
+    { type: "turn/start", file: 1, time: 110, data: { turn: 2 } },
+    { type: "assistant/message", file: 1, time: 120, data: { turn: 2, usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 } } },
+  ];
+  const complaint = { type: "user/message", file: 1, time: 200, data: { id: "human-1", role: "user", content: [{ type: "text", text: "还是不行，重试" }] } };
+  const records = [{ messageId: "scout-fu-1", route: "p/m", task: "修好那个 bug", predictedTokens: 1000, dispatchedAt: 90 }];
+  assert.equal(settleFromEvents(records, [...base, complaint]).settled, 1);
+  assert.equal(records[0].followUp.kind, "reask");
+  assert.ok(records[0].followUp.text.length > 0 && records[0].followUp.text.length <= 120);
+
+  const fresh = [{ messageId: "scout-fu-2", route: "p/m", task: "修好那个 bug", predictedTokens: 1000, dispatchedAt: 90 }];
+  const next = { type: "user/message", file: 1, time: 200, data: { id: "human-2", role: "user", content: [{ type: "text", text: "顺便把文档也更新了" }] } };
+  settleFromEvents(fresh, [
+    { type: "user/message", file: 1, time: 100, data: { id: "scout-fu-2", role: "user", content: [{ type: "text", text: "修好那个 bug" }] } },
+    ...base.slice(1),
+    next,
+  ]);
+  assert.equal(fresh[0].followUp.kind, "continuation");
+});
+
+test("priorsFrom tracks re-ask rate and mean actual tokens", () => {
+  const priors = priorsFrom([
+    { settledAt: 1, route: "p/m", actualTokens: 100_000, predictedTokens: 100_000, followUp: { kind: "continuation" } },
+    { settledAt: 2, route: "p/m", actualTokens: 200_000, predictedTokens: 100_000, followUp: { kind: "reask" } },
+    { settledAt: 3, route: "p/m", actualTokens: 300_000, predictedTokens: 100_000 }, // unclassified follow-up
+  ]);
+  assert.equal(priors.get("p/m").dispatches, 3);
+  assert.equal(priors.get("p/m").meanTokens, 200_000);
+  assert.equal(priors.get("p/m").reaskRate, 0.5, "one reask of two classified follow-ups");
+});
+
+test("priorRow ranks probe-free from history and says so", () => {
+  const cheap = priorRow({ provider: "p", model: "cheap" }, { dispatches: 3, meanTokens: 100_000, reaskRate: 0 });
+  const pricey = priorRow({ provider: "p", model: "big" }, { dispatches: 5, meanTokens: 300_000, reaskRate: 0.5 });
+  assert.equal(cheap.priorMode, true);
+  assert.equal(cheap.quality, 1, "no re-asks maps to full prior quality");
+  assert.equal(pricey.quality, 0.5);
+  const ranked = rankRows([cheap, pricey], 0.5);
+  assert.equal(`${ranked[0].candidate.provider}/${ranked[0].candidate.model}`, "p/cheap");
+  const text = renderReport({ task: "t", rows: ranked, lambda: 0.5 });
+  assert.match(text, /prior mode · 3 settled dispatches/);
+  assert.match(text, /prior mode · 5 settled dispatches · reask 50%/);
 });
 
 if (failures.length > 0) {

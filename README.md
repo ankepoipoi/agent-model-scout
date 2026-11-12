@@ -141,6 +141,7 @@ Every successful probe ends in a picker card, and a picked model runs the task i
 | *(task)* | probe it, pick, run |
 | `--apply` | switch onto the winner and run the task without asking |
 | `--dry` | list the candidates that would be probed, spending nothing |
+| `--trust` | rank from outcome-log priors alone, no probes; needs every candidate to have settled dispatches |
 | `--models a/b,c/d` | probe exactly these routes |
 | `--top N` | cap how many discovered candidates are probed |
 | `--lambda X` | cost weight for this run (0 = quality only, 1 = cost dominates) |
@@ -159,7 +160,11 @@ Every dispatch appends one record to `~/.dsh/agent-model-scout/outcomes.jsonl`, 
 
 Settled records become per-route priors. Once a route has `priorMinDispatches` settled dispatches, its token estimate is multiplied by its own mean actual/predicted ratio — the ranking starts pricing each model by its measured behavior instead of the shared estimate. The report shows it in two places: a `cal ×N.NN` marker in the row's NOTE column and a `▸ priors:` footer line.
 
-The log is local, append-mostly, and best-effort: a missing or corrupt file costs nothing but priors, and reconcile never throws into `/scout`. Test results and user re-asks as outcome signals, and skipping probes when a prior is confident enough, are the remaining v0.3 work.
+Settling also classifies the first user message after the dispatched turn: a repeat of the task or an explicit complaint (`重试`, `retry`, `failed`, …) is a **re-ask** — evidence the run underdelivered — anything else is a continuation. Re-ask rate is the only quality signal that survived the self-check (the probe rubric carries none), so priors track it per route and the picker surfaces it as `历史重问 N%`.
+
+`--trust` consumes those priors without probing at all: when every candidate has settled dispatches, scout ranks by measured behavior (mean actual tokens, quality = 1 − re-ask rate) and spends nothing on probes. The rows are marked `prior mode` because their numbers are cross-task historical averages, not per-task estimates — trust mode is for when probing itself is the cost you want to avoid. If any candidate lacks priors, `--trust` degrades to a normal probe run and the report says why.
+
+The log is local, append-mostly, and best-effort: a missing or corrupt file costs nothing but priors, and reconcile never throws into `/scout`. Test results as an outcome signal are the remaining v0.3 work.
 
 ## How the score is computed
 
@@ -213,7 +218,7 @@ utility = quality − λ · (candidate tokens / max tokens among candidates)
 
 - **v0.1** — context-window/capability filtering, price table (USD), probe cache by task fingerprint.
 - **v0.2** — auto pre-flight via `agent/pre-step`, budget guard, fallback chain.
-- **v0.3** — outcome log → per-model priors. **First half landed:** dispatch records, session-log reconciliation, per-route calibration priors. Remaining: test-result and re-ask signals, skip probes when a prior is confident.
+- **v0.3** — outcome log → per-model priors. **Landed:** dispatch records, session-log reconciliation, per-route calibration priors, re-ask classification, probe-free `--trust` mode. Remaining: test-result signal.
 - **v1** — mid-run escalation on repeated tool errors / failing tests / loops; Web UI routing card.
 
 ## Development
