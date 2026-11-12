@@ -14,6 +14,7 @@ Scout is a pre-flight check, not a router daemon: it gathers cheap intel (a plan
 - **Reasoning effort selection**: For models that expose reasoning levels, pick execution intensity
 - **Re-probe optimization**: When top models are close, re-probe them and average the results
 - **Calibrated token estimation**: Uses real billing data to predict token usage
+- **Outcome log & priors**: Settles dispatched tasks against session logs; per-route calibration replaces guesswork
 - **Self-validation**: Built-in tests verify stability and accuracy
 - **Cordis plugin**: Integrates seamlessly with DeepSeek Harness
 
@@ -118,6 +119,7 @@ The plugin declares no `Config` schema: it reads a plain object from the patch e
     probeTemperature: 0       # pin sampling so two runs are comparable
     reprobeGap: 0.15          # re-probe the top-2 when their gap is below this; 0 disables
     fixedOverheadTokens: 30000 # per-turn system prompt + tool schema cost of the real task
+    priorMinDispatches: 2     # settled dispatches a route needs before its prior calibrates estimates
 ```
 
 Candidate resolution order: `--models` flag → `candidates` config → auto-discovery (`ctx.llm.listProviders()` + `listModels()`) → the agent's current model.
@@ -150,6 +152,14 @@ A chosen model that exposes reasoning efforts gets a second card: how hard it sh
 The picker is rendered through `ctx.userQuestions.ask()`, the same service behind the `ask_user_question` tool, so it appears as a normal question card. On a surface without a question UI (headless), the wizard refuses and the flag-driven forms still work.
 
 `--apply` calls the native `agent.model.select()`, which is durable in the session projection and takes effect on the next step. The decision record is the command's own log entry plus the report text in `command/done`, so a replayed session still shows why the model changed.
+
+## Outcome log (v0.3)
+
+Every dispatch appends one record to `~/.dsh/agent-model-scout/outcomes.jsonl`, keyed by the `scout-` id of the injected task message. The next `/scout` run reconciles pending records against the session logs (same multi-frame zstd pipeline as the self-check), matching each message id to the turn that consumed it and settling it with what actually happened: the route that ran, the step count, and the turn's billed tokens from `data.usage`. A record settles only after something follows its turn in the same file, because the newest turn may still be streaming.
+
+Settled records become per-route priors. Once a route has `priorMinDispatches` settled dispatches, its token estimate is multiplied by its own mean actual/predicted ratio — the ranking starts pricing each model by its measured behavior instead of the shared estimate. The report shows it in two places: a `cal ×N.NN` marker in the row's NOTE column and a `▸ priors:` footer line.
+
+The log is local, append-mostly, and best-effort: a missing or corrupt file costs nothing but priors, and reconcile never throws into `/scout`. Test results and user re-asks as outcome signals, and skipping probes when a prior is confident enough, are the remaining v0.3 work.
 
 ## How the score is computed
 
@@ -203,7 +213,7 @@ utility = quality − λ · (candidate tokens / max tokens among candidates)
 
 - **v0.1** — context-window/capability filtering, price table (USD), probe cache by task fingerprint.
 - **v0.2** — auto pre-flight via `agent/pre-step`, budget guard, fallback chain.
-- **v0.3** — outcome log (actual usage, test result, user re-ask) → per-model priors, skip probes when confident.
+- **v0.3** — outcome log → per-model priors. **First half landed:** dispatch records, session-log reconciliation, per-route calibration priors. Remaining: test-result and re-ask signals, skip probes when a prior is confident.
 - **v1** — mid-run escalation on repeated tool errors / failing tests / loops; Web UI routing card.
 
 ## Development

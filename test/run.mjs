@@ -5,9 +5,15 @@
  * Run: ELECTRON_RUN_AS_NODE=1 "<app>" test/run.mjs   (see README)
  */
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { estimateTaskTokens, estimateTextTokens, formatTokens } from "../lib/estimate.js";
+import { applyPriors, appendDispatch, loadOutcomes, priorsFrom, saveOutcomes, settleFromEvents } from "../lib/outcome.js";
 import { buildRow, combineRows, normalizePlan, parsePlan, qualityOf, rankRows, suggestEffort } from "../lib/plan.js";
 import { renderReport, truncate } from "../lib/render.js";
+
+const tmpBase = mkdtempSync(join(tmpdir(), "scout-test-"));
 
 let passed = 0;
 const failures = [];
@@ -261,6 +267,105 @@ test("renderReport renders probe failures without crashing", () => {
 test("truncate never exceeds the budget", () => {
   assert.equal(truncate("abcdef", 4), "abc…");
   assert.equal(truncate("abc", 4), "abc");
+});
+
+// ---------- outcome log (v0.3) ----------
+
+test("settleFromEvents links a dispatch to its turn via the scout message id", () => {
+  const events = [
+    { type: "model/selection", file: 1, time: 105, data: { provider: "zai-coding-cn", model: "glm-5.3", reasoningEffort: "max" } },
+    { type: "user/message", file: 1, time: 100, data: { id: "scout-abc-1", role: "user", content: [{ type: "text", text: "do it" }] } },
+    { type: "turn/start", file: 1, time: 110, data: { turn: 3 } },
+    { type: "step/start", file: 1, time: 111, data: { turn: 3 } },
+    { type: "assistant/message", file: 1, time: 112, data: { turn: 3, usage: { inputTokens: 10_000, outputTokens: 500, cacheReadTokens: 20_000, cacheWriteTokens: 1_000 } } },
+    { type: "step/start", file: 1, time: 113, data: { turn: 3 } },
+    { type: "assistant/message", file: 1, time: 114, data: { turn: 3, usage: { inputTokens: 5_000, outputTokens: 300, cacheReadTokens: 25_000, cacheWriteTokens: 0 } } },
+    // A later user message closes the dispatched turn.
+    { type: "user/message", file: 1, time: 200, data: { id: "next-human", role: "user", content: [{ type: "text", text: "thanks" }] } },
+  ];
+  const records = [
+    { messageId: "scout-abc-1", route: "zai-coding-cn/glm-5.3", predictedTokens: 100_000, predictedSteps: 2, dispatchedAt: 90 },
+  ];
+  const { settled } = settleFromEvents(records, events);
+  assert.equal(settled, 1);
+  assert.equal(records[0].actualRoute, "zai-coding-cn/glm-5.3", "the route that actually ran");
+  assert.equal(records[0].actualSteps, 2);
+  assert.equal(records[0].actualTokens, 61_800, "billed = input + cacheRead + cacheWrite + output across calls");
+  assert.equal(records[0].actualCalls, 2);
+});
+
+test("settleFromEvents leaves a still-running turn pending", () => {
+  const events = [
+    { type: "user/message", file: 1, time: 100, data: { id: "scout-live-1", role: "user", content: [{ type: "text", text: "go" }] } },
+    { type: "turn/start", file: 1, time: 110, data: { turn: 1 } },
+    { type: "assistant/message", file: 1, time: 120, data: { turn: 1, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 } } },
+    // Nothing follows: the turn may still be streaming, usage is partial.
+  ];
+  const records = [{ messageId: "scout-live-1", route: "p/m", predictedTokens: 50_000, dispatchedAt: 90 }];
+  const { settled } = settleFromEvents(records, events);
+  assert.equal(settled, 0);
+  assert.equal(records[0].settledAt, undefined);
+});
+
+test("settleFromEvents ignores scout ids from another session file's numbering", () => {
+  // Turn numbers restart per file: a same-id message must only match its own file.
+  const events = [
+    { type: "user/message", file: 1, time: 100, data: { id: "scout-x-1", role: "user", content: [{ type: "text", text: "a" }] } },
+    { type: "turn/start", file: 2, time: 105, data: { turn: 1 } },
+    { type: "user/message", file: 2, time: 200, data: { id: "other", role: "user", content: [{ type: "text", text: "b" }] } },
+  ];
+  const records = [{ messageId: "scout-x-1", route: "p/m", dispatchedAt: 90 }];
+  assert.equal(settleFromEvents(records, events).settled, 0, "turn/start in another file must not claim the dispatch");
+});
+
+test("priorsFrom averages per-route ratios and prefers the route that ran", () => {
+  const records = [
+    { settledAt: 1, route: "(current)", actualRoute: "zai-coding-cn/glm-5.3", predictedTokens: 100_000, actualTokens: 90_000, predictedSteps: 4, actualSteps: 4 },
+    { settledAt: 2, route: "zai-coding-cn/glm-5.3", predictedTokens: 100_000, actualTokens: 110_000, predictedSteps: 4, actualSteps: 6 },
+    { settledAt: 3, route: "deepseek-official/deepseek-flash", predictedTokens: 50_000, actualTokens: 60_000 },
+    { messageId: "scout-pending-1", route: "zai-coding-cn/glm-5.3", dispatchedAt: 4 }, // pending: ignored
+  ];
+  const priors = priorsFrom(records);
+  assert.equal(priors.get("zai-coding-cn/glm-5.3").dispatches, 2);
+  assert.equal(Math.round(priors.get("zai-coding-cn/glm-5.3").tokenRatio * 100), 100, "mean(0.9, 1.1)");
+  assert.equal(priors.get("zai-coding-cn/glm-5.3").stepRatio, 1.25, "mean(4/4, 6/4)");
+  assert.equal(priors.get("deepseek-official/deepseek-flash").tokenRatio, 1.2);
+  assert.equal(priors.has("(current)"), false);
+});
+
+test("applyPriors calibrates estimates only past the dispatch floor", () => {
+  const rows = [
+    { candidate: { provider: "p", model: "a" }, totalTokens: 100_000 },
+    { candidate: { provider: "p", model: "b" }, totalTokens: 100_000 },
+  ];
+  const priors = new Map([
+    ["p/a", { dispatches: 3, tokenRatio: 1.25 }],
+    ["p/b", { dispatches: 1, tokenRatio: 2 }],
+  ]);
+  const applied = applyPriors(rows, priors, 2);
+  assert.equal(rows[0].totalTokens, 125_000);
+  assert.equal(rows[1].totalTokens, 100_000, "below the floor: estimate untouched");
+  assert.deepEqual(applied, ["p/a ×1.25 (3)"]);
+});
+
+test("outcome records round-trip through the JSONL log", () => {
+  const dir = join(tmpBase, "outcomes-roundtrip");
+  rmSync(dir, { recursive: true, force: true });
+  appendDispatch(dir, { messageId: "scout-rt-1", route: "p/m", predictedTokens: 1, dispatchedAt: 1 });
+  appendDispatch(dir, { messageId: "", route: "p/m", dispatchedAt: 2 }); // rejected: no id
+  const loaded = loadOutcomes(dir);
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].messageId, "scout-rt-1");
+  const { settled } = settleFromEvents(loaded, [
+    { type: "user/message", file: 1, time: 10, data: { id: "scout-rt-1", role: "user", content: [{ type: "text", text: "t" }] } },
+    { type: "turn/start", file: 1, time: 20, data: { turn: 1 } },
+    { type: "assistant/message", file: 1, time: 30, data: { turn: 1, usage: { inputTokens: 40, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 } } },
+    { type: "turn/start", file: 1, time: 40, data: { turn: 2 } },
+  ]);
+  assert.equal(settled, 1);
+  saveOutcomes(dir, loaded);
+  assert.equal(loadOutcomes(dir)[0].actualTokens, 50);
+  rmSync(dir, { recursive: true, force: true });
 });
 
 if (failures.length > 0) {

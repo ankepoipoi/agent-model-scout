@@ -24,3 +24,5 @@
         # Per-turn system prompt + tool schema cost assumed for the real task.
         # Calibrated against dispatched turns (real billing: ~36-47k/call).
         fixedOverheadTokens: 30000
+        # Settled dispatches a route needs before its prior calibrates estimates.
+        priorMinDispatches: 2

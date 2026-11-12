@@ -14,6 +14,7 @@ Scout 是预检（pre-flight check），不是路由守护进程：它收集廉�
 - **推理强度切换**：模型暴露强度档位时，第二张卡选执行强度
 - **复测机制**：前两名差距小于阈值时自动重测取均值，标注 volatile/stable
 - **校准的 token 估计**：用真实计费数据校准的估算公式
+- **结果日志与先验**：派发任务对照 session log 结算，按路由的校准系数取代拍脑袋
 - **自检工具**：内置稳定性与校准度验证（`test/selfcheck.mjs`）
 - **Cordis 插件**：与 DeepSeek Harness 无缝集成
 
@@ -88,6 +89,7 @@ Copy-Item -Recurse -Force .\package.json, .\lib $dest
         probeTimeoutMs: 60000     # 单次探针的墙钟预算
         reprobeGap: 0.15          # 前两名分差小于该值时自动复测；0 关闭
         fixedOverheadTokens: 30000 # 真实任务每轮的系统提示 + 工具 schema 开销
+        priorMinDispatches: 2     # 一条路由结算满几次派发后，其先验才开始校准估算
 ```
 
 > `insert:` 不能省。直接写 `- id: scout` 是在给*已存在*的条目打补丁，id 找不到时会被静默跳过——插件根本不会加载。
@@ -118,6 +120,7 @@ Copy-Item -Recurse -Force .\package.json, .\lib $dest
     probeTemperature: 0       # 固定采样参数，让两次运行可比较
     reprobeGap: 0.15          # 前两名分差小于该值时自动复测；0 关闭
     fixedOverheadTokens: 30000 # 真实任务每轮的系统提示 + 工具 schema 开销
+    priorMinDispatches: 2     # 一条路由结算满几次派发后，其先验才开始校准估算
 ```
 
 候选解析顺序：`--models` 标志 → `candidates` 配置 → 自动发现（`ctx.llm.listProviders()` + `listModels()`）→ agent 当前模型。
@@ -150,6 +153,14 @@ Copy-Item -Recurse -Force .\package.json, .\lib $dest
 选择卡通过 `ctx.userQuestions.ask()` 渲染——与 `ask_user_question` 工具同源的服务，因此呈现为普通问题卡。在没有问题 UI 的环境（无头部署），向导会拒绝执行，标志驱动的形式仍然可用。
 
 `--apply` 调用原生 `agent.model.select()`，它在 session 投影中持久化，下一步生效。决策记录就是命令自身的日志条目加上 `command/done` 里的报告文本，因此重放的 session 仍能看出模型为何切换。
+
+## 结果日志（v0.3）
+
+每次派发都向 `~/.dsh/agent-model-scout/outcomes.jsonl` 追加一条记录，以注入任务消息的 `scout-` id 为键。下一次 `/scout` 运行时，会把未结算的记录对照 session log 结算（与自检同一条多帧 zstd 管道）：按消息 id 找到消费它的那一轮，取实际发生的一切——真正跑的路由、步数、该轮按 `data.usage` 计的 billed token。只有当同一文件中该轮之后还有别的事件时才结算，因为日志里最新的那轮可能还在流式输出中。
+
+结算后的记录变成按路由的先验。一条路由结算满 `priorMinDispatches` 次后，它的 token 估算会乘上自己的实际/预测均值——排名开始按各模型的实测行为定价，而不是只靠统一估算。报告里有两处体现：NOTE 列的 `cal ×N.NN` 标记，和尾部的 `▸ priors:` 一行。
+
+日志是本地的、以追加为主、尽力而为：文件缺失或损坏只损失先验，reconcile 绝不会把异常抛进 `/scout`。测试结果与用户重问作为结果信号、先验足够有把握时跳过探测，是 v0.3 剩下的工作。
 
 ## 分数是怎么算的
 
@@ -203,7 +214,7 @@ utility = quality − λ · (候选 tokens / 候选中的最大 tokens)
 
 - **v0.1** — 上下文窗口/能力过滤、价格表（USD）、按任务指纹缓存探针。
 - **v0.2** — 通过 `agent/pre-step` 自动预检、预算护栏、回退链。
-- **v0.3** — 结果日志（实际用量、测试结果、用户重问）→ 各模型先验，有把握时跳过探测。
+- **v0.3** — 结果日志 → 各模型先验。**前半已落地**：派发记录、session log 结算、按路由的校准先验。待做：测试结果与用户重问信号、有把握时跳过探测。
 - **v1** — 运行中升级（连续工具报错/测试失败/循环时换模型）；Web UI 路由卡。
 
 ## 开发
