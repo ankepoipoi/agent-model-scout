@@ -1,0 +1,158 @@
+# agent-model-scout
+
+`/scout <task>` — probe every configured model with one cheap planning call, rank the plans by quality vs. estimated token cost, and optionally switch this agent onto the winner.
+
+Scout is a pre-flight check, not a router daemon: it gathers cheap intel (a plan), scores it locally, and lets you or the command make the call.
+
+```text
+scout · 3 candidates · λ=0.50
+task: 把 config loader 改成支持 .toml，并补测试
+
+  #  MODEL                              Q     EST.TOK  U      TIME   NOTE
+  1  deepseek-official/deepseek-flash   0.74  58k      0.61   3.1s   4 steps, 2 files
+  2  acme/big                           0.90  220k     0.40   5.7s   6 steps, 5 files
+  3  acme/tiny                          0.11  18k      0.07   1.2s   1 step, 0 files
+
+  top plan: 1) 读 src/config/loader.ts  2) 在 parseConfig() 里加 toml 分支 …
+  files: src/config/loader.ts, test/loader.test.ts
+
+  ▸ recommend: deepseek-official/deepseek-flash — quality 0.74, est. 58k tokens (7 turns)
+  ▸ dry run — add --apply to switch this agent's model.
+```
+
+## Status
+
+v0, manual trigger only. It answers *"which model plans this task better for the money"*, not *"which model will finish it"*. Learned priors, price tables, auto pre-flight, and mid-run escalation are deliberately out of scope (see [Roadmap](#roadmap)).
+
+## Why probe instead of asking models to self-score
+
+Asking a model to estimate its own token usage or grade its own answer is unreliable: tokenizers differ per provider, models cannot count tokens, and self-evaluation carries a known self-preference bias. Scout splits the job:
+
+| Question | Who answers |
+|---|---|
+| What would you do? | the candidate model (a plan, as JSON) |
+| How good is that plan? | a fixed local rubric |
+| How many tokens will it take? | a local cost model |
+
+The model only ever supplies a plan. Everything that becomes a number is computed here, so the scoring is inspectable, tunable, and replayable.
+
+## Install
+
+Requires a DeepSeek Harness profile with at least two configured models. Target profile in the examples is `desktop`; adjust if yours differs.
+
+```powershell
+# 1. Close DeepSeek Harness
+# 2. Copy the package into the profile
+$dest = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\agent-model-scout"
+New-Item -ItemType Directory -Force $dest | Out-Null
+Copy-Item -Recurse -Force .\package.json, .\lib $dest
+
+# 3. Append the composition entry (see cordis.patch.snippet.yml) to
+#    %USERPROFILE%\.dsh\profiles\desktop\cordis.patch.yml
+
+# 4. Restart DeepSeek Harness, then run:  /scout <task>
+```
+
+Or run `.\install.ps1` (idempotent; does steps 2–3, `-DryRun` shows the plan first).
+
+The plugin declares no `Config` schema: it reads a plain object from the patch entry, so it does not couple to a `schemastery` version.
+
+## Configuration
+
+```yaml
+- id: scout
+  name: "agent-model-scout"
+  config:
+    candidates: []            # explicit "provider/model" routes; empty = auto-discover
+    lambda: 0.5               # cost weight: 0 ranks by quality only, 1 lets cost dominate
+    topK: 4                   # max candidates probed when discovering
+    maxProbeTokens: 500       # output cap for one probe
+    probeTimeoutMs: 60000     # wall-clock budget for one probe
+    fixedOverheadTokens: 3000 # per-turn system prompt + tool schema cost of the real task
+```
+
+Candidate resolution order: `--models` flag → `candidates` config → auto-discovery (`ctx.llm.listProviders()` + `listModels()`) → the agent's current model.
+
+## Usage
+
+```text
+/scout 把 config loader 改成支持 .toml，并补测试
+/scout 重构 session 存储层 --apply
+/scout 给 CLI 加 --json --dry
+/scout ... --models deepseek-official/deepseek-flash,acme/big --top 2
+```
+
+| Flag | Effect |
+|---|---|
+| `--apply` | switch this agent onto the winning model (takes effect from the next step) |
+| `--dry` | list the candidates that would be probed, spending nothing |
+| `--models a/b,c/d` | probe exactly these routes |
+| `--top N` | cap how many discovered candidates are probed |
+
+`--apply` calls the native `agent.model.select()`, which is durable in the session projection and takes effect on the next step. The decision record is the command's own log entry plus the report text in `command/done`, so a replayed session still shows why the model changed.
+
+## How the score is computed
+
+### Quality rubric (0–1)
+
+| Term | Weight | Notes |
+|---|---|---|
+| structure | 0.30 | step count, saturating at 6 |
+| scope | 0.20 | files named, saturating at 4 |
+| concreteness | 0.20 | share of steps naming a path, symbol, or code span |
+| coverage | 0.20 | plan both edits and verifies (edit + test/bash/grep/read) |
+| risk | 0.05 | low full, medium half, high zero |
+| confidence | 0.05 | self-reported, deliberately the smallest term |
+| blockers | −0.10 | −0.05 each, capped at −0.10 |
+
+### Token estimate
+
+The loop re-sends the whole context every turn, so input cost grows quadratically with turn count:
+
+```text
+total ≈ (fixed + task)·turns + 1200·turns(turns+1)/2 + 500·turns
+```
+
+Coefficients live at the top of `lib/estimate.js`. Text density uses a provider-neutral heuristic (CJK ≈ 0.6 tokens/char, ASCII ≈ 0.3 tokens/char) because a shared tokenizer would be wrong for every provider except one.
+
+### Ranking
+
+```text
+utility = quality − λ · (candidate tokens / max tokens among candidates)
+```
+
+## Known limitations
+
+1. **The rubric is a proxy**, not a success rate. v0 exists to test whether plans differ enough to predict execution.
+2. **Probing costs money**: one call per candidate. `topK=4` is roughly 4 × (input + 500 tokens).
+3. **Tokenizers differ**: the estimate is a shared density heuristic, not a provider-exact count.
+4. **No capability filter yet**: a model whose context window cannot hold the session is still probed.
+5. **Switching costs cache**: crossing providers drops the prompt cache; v0 does not price that.
+6. **Probe requests are not in the session log**: only the decision is durable.
+
+## Roadmap
+
+- **v0.1** — context-window/capability filtering, price table (USD), probe cache by task fingerprint.
+- **v0.2** — auto pre-flight via `agent/pre-step`, budget guard, fallback chain.
+- **v0.3** — outcome log (actual usage, test result, user re-ask) → per-model priors, skip probes when confident.
+- **v1** — mid-run escalation on repeated tool errors / failing tests / loops; Web UI routing card.
+
+## Development
+
+Pure logic (estimation, plan parsing, scoring, ranking, rendering) has no DSH dependency and runs standalone:
+
+```powershell
+$env:ELECTRON_RUN_AS_NODE='1'
+& "D:\deepsh\DeepSeek Harness.exe" test\run.mjs    # 15 assertions
+& "D:\deepsh\DeepSeek Harness.exe" test\demo.mjs   # renders a report from fixtures
+```
+
+`lib/index.js` is the only file that imports the host (`createUserMessage`, `BlockAssembler` from `@deepseek-ai/dsh-llm`), typed against `0.2.2-rc.1`.
+
+## Publishing
+
+Run `.\publish.ps1 -Owner <your-github-name>` from a normal PowerShell window (not inside a sandboxed agent, which has no network egress). With `gh` authenticated it creates the repo and pushes; without `gh` it commits locally and prints the two commands to finish in the browser.
+
+## License
+
+MIT
