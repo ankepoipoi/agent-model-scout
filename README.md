@@ -88,6 +88,7 @@ Candidate resolution order: `--models` flag → `candidates` config → auto-dis
 | `--dry` | list the candidates that would be probed, spending nothing |
 | `--models a/b,c/d` | probe exactly these routes |
 | `--top N` | cap how many discovered candidates are probed |
+| `--lambda X` | cost weight for this run (0 = quality only, 1 = cost dominates) |
 
 `--apply` calls the native `agent.model.select()`, which is durable in the session projection and takes effect on the next step. The decision record is the command's own log entry plus the report text in `command/done`, so a replayed session still shows why the model changed.
 
@@ -98,12 +99,14 @@ Candidate resolution order: `--models` flag → `candidates` config → auto-dis
 | Term | Weight | Notes |
 |---|---|---|
 | structure | 0.30 | step count, saturating at 6 |
-| scope | 0.20 | files named, saturating at 4 |
-| concreteness | 0.20 | share of steps naming a path, symbol, or code span |
+| scope | 0.15 | files named, saturating at 2 |
+| concreteness | 0.25 | share of steps naming a path, symbol, or code span |
 | coverage | 0.20 | plan both edits and verifies (edit + test/bash/grep/read) |
 | risk | 0.05 | low full, medium half, high zero |
 | confidence | 0.05 | self-reported, deliberately the smallest term |
 | blockers | −0.10 | −0.05 each, capped at −0.10 |
+
+`scope` saturates at two files because most tasks legitimately touch one or two; an earlier version rewarded naming many files and pushed models toward inventing extra targets.
 
 ### Token estimate
 
@@ -112,6 +115,8 @@ The loop re-sends the whole context every turn, so input cost grows quadraticall
 ```text
 total ≈ (fixed + task)·turns + 1200·turns(turns+1)/2 + 500·turns
 ```
+
+`turns` is the plan's `est_turns`, floored by step count (`ceil(steps/3)`) — a six-step plan cannot execute in one turn, and self-reported turn counts are the least reliable field a probe returns.
 
 Coefficients live at the top of `lib/estimate.js`. Text density uses a provider-neutral heuristic (CJK ≈ 0.6 tokens/char, ASCII ≈ 0.3 tokens/char) because a shared tokenizer would be wrong for every provider except one.
 

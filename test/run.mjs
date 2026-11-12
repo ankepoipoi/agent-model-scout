@@ -165,6 +165,40 @@ test("renderReport flags an empty plan instead of listing zero steps", () => {
   assert.match(text, /empty plan/);
 });
 
+test("buildRow floors self-reported turns by step count", () => {
+  const one = buildRow({ candidate: { provider: "p", model: "one" }, plan: normalizePlan({ plan: ["a"], est_turns: 1 }), taskTokens: 40 });
+  const many = buildRow({
+    candidate: { provider: "p", model: "many" },
+    plan: normalizePlan({ plan: ["a", "b", "c", "d", "e", "f"], est_turns: 1 }),
+    taskTokens: 40,
+  });
+  assert.equal(one.turns, 1);
+  assert.equal(many.turns, 2, "six steps cannot run in one turn");
+  assert.ok(many.totalTokens > one.totalTokens);
+});
+
+test("renderReport surfaces a higher-quality leader when value wins", () => {
+  const strong = buildRow({
+    candidate: { provider: "p", model: "strong" },
+    plan: normalizePlan({
+      plan: ["read src/a.ts", "edit src/a.ts", "add test", "run tests", "check types", "update docs"],
+      files: ["a.ts", "b.ts"],
+      tool_calls: { edit: 2, bash: 2 },
+      confidence: 0.9,
+      est_turns: 12,
+    }),
+    taskTokens: 40,
+  });
+  const cheap = buildRow({
+    candidate: { provider: "p", model: "cheap" },
+    plan: normalizePlan({ plan: ["a"], est_turns: 1 }),
+    taskTokens: 40,
+  });
+  const rows = rankRows([cheap, strong], 1);
+  const text = renderReport({ task: "x", rows, lambda: 1, recommendation: "recommend: p/cheap", qualityLeader: strong });
+  assert.match(text, /quality leader: p\/strong/);
+});
+
 test("renderReport renders probe failures without crashing", () => {
   const text = renderReport({
     task: "x",
