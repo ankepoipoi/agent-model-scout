@@ -12,6 +12,7 @@ import { estimateTaskTokens, estimateTextTokens, formatTokens } from "../lib/est
 import { applyPriors, appendDispatch, classifyFollowUp, loadOutcomes, priorsFrom, priorRow, saveOutcomes, settleFromEvents } from "../lib/outcome.js";
 import { buildRow, combineRows, normalizePlan, parsePlan, qualityOf, rankRows, suggestEffort } from "../lib/plan.js";
 import { renderReport, truncate } from "../lib/render.js";
+import { pickerOptions } from "../lib/index.js";
 
 const tmpBase = mkdtempSync(join(tmpdir(), "scout-test-"));
 
@@ -270,6 +271,51 @@ test("keep-current dispatch no longer shows the dry-run hint", () => {
   assert.ok(!dispatched.includes("dry run"), "task did run — the hint would be a lie");
   const dry = renderReport({ task: "x", rows, lambda: 0.5, recommendation: "recommend: p/m" });
   assert.ok(dry.includes("dry run"), "nothing ran — the hint belongs here");
+});
+
+// ---------- picker card regression (probe-order bug, 2026-11-12 17:27 run) ----------
+
+/** Minimal probed row for picker tests. */
+function pickerRow(provider, model, quality, totalTokens, elapsedMs = 1000) {
+  return { candidate: { provider, model }, quality, totalTokens, turns: 3, probeTokens: 500, elapsedMs, plan: { steps: ["a", "b"], files: ["f"] }, groundingChecked: true };
+}
+
+test("picker star follows utility rank, not probe order", () => {
+  // Exact shape of the 17:27 run: deepseek probes failed, so usable arrived
+  // in discovery order with glm-4.6v first — while glm-5.3 dominated both
+  // quality (0.83 vs 0.44) and cost (46k vs 58k).
+  const usable = [
+    pickerRow("zai-coding-cn", "glm-4.6v", 0.44, 58_000),
+    pickerRow("zai-coding-cn", "glm-5.3", 0.83, 46_000),
+  ];
+  const { pairs, options } = pickerOptions(usable, 0.5);
+  assert.equal(pairs[0].row.candidate.model, "glm-5.3", "rank 1 must be the utility winner");
+  assert.ok(options[0].label.startsWith("glm-5.3 ⭐推荐"), "the star belongs to the winner");
+  assert.equal(options[1].label, "glm-4.6v");
+  assert.match(options[0].description, /第1名/);
+  assert.match(options[1].description, /第2名/);
+  assert.equal(options.at(-1).label, "保持当前模型", "keep-current stays last");
+});
+
+test("picker still crowns the cheaper model when utility favors cost", () => {
+  // The 14:18 run: 4.6v cheaper by 10k with 0.01 less quality — λ=0.5 says
+  // it wins. The fix must not over-correct into pure quality ordering.
+  const usable = [
+    pickerRow("zai-coding-cn", "glm-5.3", 0.71, 46_000),
+    pickerRow("zai-coding-cn", "glm-4.6v", 0.70, 36_000),
+  ];
+  const { pairs } = pickerOptions(usable, 0.5);
+  assert.equal(pairs[0].row.candidate.model, "glm-4.6v", "utility winner, not quality leader");
+});
+
+test("picker disambiguates duplicate model ids across providers", () => {
+  const usable = [
+    pickerRow("acme", "same", 0.5, 10_000),
+    pickerRow("beta", "same", 0.5, 10_000),
+  ];
+  const { options } = pickerOptions(usable, 0.5);
+  assert.equal(options[0].label, "acme/same ⭐推荐");
+  assert.equal(options[1].label, "beta/same");
 });
 
 test("truncate never exceeds the budget", () => {
