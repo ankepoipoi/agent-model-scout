@@ -17,10 +17,6 @@ Scout is a pre-flight check, not a router daemon: it gathers cheap intel (a plan
 - **Self-validation**: Built-in tests verify stability and accuracy
 - **Cordis plugin**: Integrates seamlessly with DeepSeek Harness
 
-## Status
-
-v0, manual trigger only. Learned priors, price tables, auto pre-flight, and mid-run escalation are deliberately out of scope (see [Roadmap](#roadmap)).
-
 ```text
 scout · 3 candidates · λ=0.50
 task: make the config loader support .toml and add tests
