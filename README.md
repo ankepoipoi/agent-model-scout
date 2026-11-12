@@ -76,7 +76,7 @@ Candidate resolution order: `--models` flag → `candidates` config → auto-dis
 
 ## Usage
 
-Every successful probe ends in a picker card — the table alone never switches anything.
+Every successful probe ends in a picker card, and a picked model runs the task immediately — the loop is closed: probe → pick → execute.
 
 ```text
 /scout
@@ -87,13 +87,15 @@ Every successful probe ends in a picker card — the table alone never switches 
 
 | Flag | Effect |
 |---|---|
-| *(no task)* | ask for the task first, then probe, then pick |
-| *(task)* | probe it directly, then pick |
-| `--apply` | switch onto the winning model without asking (script mode) |
+| *(no task)* | ask for the task, probe, pick, run |
+| *(task)* | probe it, pick, run |
+| `--apply` | switch onto the winner and run the task without asking |
 | `--dry` | list the candidates that would be probed, spending nothing |
 | `--models a/b,c/d` | probe exactly these routes |
 | `--top N` | cap how many discovered candidates are probed |
 | `--lambda X` | cost weight for this run (0 = quality only, 1 = cost dominates) |
+
+Picking `保持当前模型` runs the task without switching; dismissing the card runs nothing. The hand-off is `agent.followup()` with a frozen user message, so the task enters the session log as an ordinary turn and the recorded model selection takes effect on that turn's first step.
 
 The picker is rendered through `ctx.userQuestions.ask()`, the same service behind the `ask_user_question` tool, so it appears as a normal question card. On a surface without a question UI (headless), the wizard refuses and the flag-driven forms still work.
 
