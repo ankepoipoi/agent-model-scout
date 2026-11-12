@@ -1,5 +1,7 @@
 # agent-model-scout
 
+English | [简体中文](README.zh-CN.md)
+
 `/scout <task>` — probe every configured model with one cheap planning call, rank the plans by quality vs. estimated token cost, and optionally switch this agent onto the winner.
 
 Scout is a pre-flight check, not a router daemon: it gathers cheap intel (a plan), scores it locally, and lets you or the command make the call.
@@ -162,7 +164,7 @@ Pure logic (estimation, plan parsing, scoring, ranking, rendering) has no DSH de
 
 ```powershell
 $env:ELECTRON_RUN_AS_NODE='1'
-& "D:\deepsh\DeepSeek Harness.exe" test\run.mjs    # 15 assertions
+& "D:\deepsh\DeepSeek Harness.exe" test\run.mjs    # 19 assertions
 & "D:\deepsh\DeepSeek Harness.exe" test\demo.mjs   # renders a report from fixtures
 ```
 
