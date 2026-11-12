@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { estimateTaskTokens, estimateTextTokens, formatTokens } from "../lib/estimate.js";
-import { buildRow, combineRows, normalizePlan, parsePlan, qualityOf, rankRows } from "../lib/plan.js";
+import { buildRow, combineRows, normalizePlan, parsePlan, qualityOf, rankRows, suggestEffort } from "../lib/plan.js";
 import { renderReport, truncate } from "../lib/render.js";
 
 let passed = 0;
@@ -152,6 +152,18 @@ test("combineRows averages re-probe samples and records the spread", () => {
   assert.equal(merged.probes, 2);
   assert.ok(merged.turns >= 1, "averaged turns stay at least 1");
   assert.equal(merged.candidate, candidate, "identity is preserved for the picker");
+});
+
+test("suggestEffort maps plan complexity onto the effort ladder", () => {
+  const ladder = ["min", "low", "medium", "high", "max"];
+  const complex = normalizePlan({ plan: ["a", "b", "c", "d", "e", "f"], est_turns: 5, risk: "high" });
+  const simple = normalizePlan({ plan: ["a"], est_turns: 1, risk: "low" });
+  const middling = normalizePlan({ plan: ["a", "b", "c"], est_turns: 2, risk: "low" });
+  assert.equal(suggestEffort(ladder, "medium", complex), "max", "risky many-step plans earn the deepest effort");
+  assert.equal(suggestEffort(ladder, "medium", simple), "min", "simple plans get the cheapest effort");
+  assert.equal(suggestEffort(ladder, "medium", middling), "medium", "the model's own default covers the middle");
+  assert.equal(suggestEffort(["turbo", "sport"], undefined, middling), "sport", "unknown ids keep discovery order and fall in the middle");
+  assert.equal(suggestEffort([], undefined, complex), undefined, "no efforts exposed means no suggestion");
 });
 
 test("renderReport includes every candidate and the recommendation", () => {

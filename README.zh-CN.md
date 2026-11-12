@@ -134,6 +134,8 @@ Copy-Item -Recurse -Force .\package.json, .\lib $dest
 
 选"保持当前模型"则不切换、直接用当前模型执行；关掉卡片则什么都不执行。任务通过 `agent.followup()` 以一条冻结的 user message 交接，作为普通一轮进入 session log，已记录的模型选择在该轮第一步生效。
 
+选中的模型若暴露推理强度（reasoning efforts），会紧跟第二张卡：执行时想多深（该模型自己的强度档位，外加`默认`）。建议值跟随计划走——高风险或多步骤的任务给最深档，简单任务给最省档；`--apply` 不问直接采用建议值。强度按模型经 `ctx.llm.resolveModelInfo()` 动态发现；没有强度目录的模型静默跳过这张卡，"保持当前模型"路径则完全不碰强度。
+
 选择卡通过 `ctx.userQuestions.ask()` 渲染——与 `ask_user_question` 工具同源的服务，因此呈现为普通问题卡。在没有问题 UI 的环境（无头部署），向导会拒绝执行，标志驱动的形式仍然可用。
 
 `--apply` 调用原生 `agent.model.select()`，它在 session 投影中持久化，下一步生效。决策记录就是命令自身的日志条目加上 `command/done` 里的报告文本，因此重放的 session 仍能看出模型为何切换。

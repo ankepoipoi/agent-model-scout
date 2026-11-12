@@ -134,6 +134,8 @@ Every successful probe ends in a picker card, and a picked model runs the task i
 
 Picking the keep-current option runs the task without switching; dismissing the card runs nothing. The hand-off is `agent.followup()` with a frozen user message, so the task enters the session log as an ordinary turn and the recorded model selection takes effect on that turn's first step.
 
+A chosen model that exposes reasoning efforts gets a second card: how hard it should think while executing (its own effort ids plus `默认`, the model's default). The suggestion follows the plan — risky or many-stepped work earns the deepest effort, simple work the cheapest — and `--apply` applies the suggestion without asking. Efforts are discovered per model via `ctx.llm.resolveModelInfo()`; a model without an effort catalog skips the card silently, and the keep-current path leaves the effort untouched.
+
 The picker is rendered through `ctx.userQuestions.ask()`, the same service behind the `ask_user_question` tool, so it appears as a normal question card. On a surface without a question UI (headless), the wizard refuses and the flag-driven forms still work.
 
 `--apply` calls the native `agent.model.select()`, which is durable in the session projection and takes effect on the next step. The decision record is the command's own log entry plus the report text in `command/done`, so a replayed session still shows why the model changed.
