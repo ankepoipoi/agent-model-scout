@@ -1,13 +1,12 @@
 /**
- * Show the LAST scout command lifecycle pair and everything logged after the
- * app restart, to see what the bare `/scout` actually returned.
+ * Inspect request/header, request/context, model/selection and one turn's
+ * step timing, to find what real-outcome data exists (input size, model, time).
  */
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { zstdDecompressSync } from "node:zlib";
 
 const file =
   "C:/Users/atoura/.dsh/sessions/--C-Users-atoura-Documents-deepseek-harness-default-workspace--/session-b296d2b4-732a-4a05-a20f-df8b4d073184/session.v4.jsonl.zstd";
-const buf = readFileSync(file);
 
 function decodeAll(buffer) {
   const chunks = [];
@@ -28,20 +27,27 @@ function decodeAll(buffer) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-const lines = decodeAll(buf).split("\n").filter((l) => l.trim().length > 0);
-const parse = (l) => { try { return JSON.parse(l); } catch { return null; } };
+const events = decodeAll(readFileSync(file)).split("\n").filter((l) => l.trim().length > 0).map((l) => {
+  try { return JSON.parse(l); } catch { return null; }
+}).filter(Boolean);
 
-const commandEvents = lines.map(parse).filter((e) => e?.type === "command/run" || e?.type === "command/done");
-console.log(`command events total: ${commandEvents.length}`);
-console.log("\n--- last 4 command events ---");
-for (const event of commandEvents.slice(-4)) {
-  console.log(JSON.stringify(event).slice(0, 900));
-}
+const show = (type, n = 2, slice = 1000) => {
+  const samples = events.filter((e) => e.type === type).slice(0, n);
+  console.log(`\n===== ${type} (${events.filter((e) => e.type === type).length} total) =====`);
+  for (const sample of samples) console.log(JSON.stringify(sample).slice(0, slice));
+};
 
-// Restart was ~10:55:38 local = 1794452138000 ms.
-const cutoff = 1794452138000;
-const after = lines.map(parse).filter((e) => e && e.time > cutoff && e.type !== "tool/result" && e.type !== "assistant/message" && e.type !== "job/registered");
-console.log(`\n--- non-tool events after restart (${after.length}) ---`);
-for (const event of after.slice(-15)) {
-  console.log(JSON.stringify(event).slice(0, 600));
+show("request/header", 2, 1600);
+show("request/context", 1, 1600);
+show("model/selection", 3, 400);
+
+// Turn duration: pair turn/start and turn/end.
+console.log("\n===== turn durations =====");
+const starts = new Map();
+for (const event of events) {
+  if (event.type === "turn/start") starts.set(event.data.turn, event.time);
+  else if (event.type === "turn/end" && starts.has(event.data.turn)) {
+    const seconds = ((event.time - starts.get(event.data.turn)) / 1000).toFixed(0);
+    console.log(`turn ${String(event.data.turn).padStart(2)}: ${seconds}s`);
+  }
 }

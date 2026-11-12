@@ -176,7 +176,7 @@ utility = quality − λ · (候选 tokens / 候选中的最大 tokens)
 ## 已知局限
 
 1. **评分标准只是代理指标**，不是成功率。v0 的目的就是检验计划差异是否足以预测执行。
-2. **排名在运行之间不稳定。** 同一任务反复跑，每次胜者都换过：标准打的是计划的*形态*，而形态在同一模型内的波动不小于模型之间。把 `/scout` 当作比较模型思路的工具，而不是自动路由器。
+2. **排名在运行之间不稳定。** 同一任务反复跑，每次胜者都换过：标准打的是计划的*形态*，而形态在同一模型内的波动不小于模型之间。9 连测自检验（`test/selfcheck.mjs`）实测：同模型 Q 漂移均值 **0.45**，同轮模型间分差均值 **0.26**——在这个噪声水平下排名不携带信号。同一检验还发现 deepseek 系在 temperature 0 下完全钉死（跨轮 ±0.02），而 glm-5.3 漂了 0.54——即使请求里带了 `temperature: 0`，各家的确定性也不一样。把 `/scout` 当作比较模型思路的工具，而不是自动路由器。
 3. **未校验的行会标出来。** session 工作目录解析不到时不检查计划文件；NOTE 栏显示 `· unverified`，落地项保持中性而非白给加分。
 4. **探测要花钱**：每个候选一次调用。`topK=4` 大约是 4 ×（输入 + 500 token）。
 5. **tokenizer 各家不同**：估算是通用密度启发式，不是 provider 精确计数。
@@ -197,8 +197,9 @@ utility = quality − λ · (候选 tokens / 候选中的最大 tokens)
 
 ```powershell
 $env:ELECTRON_RUN_AS_NODE='1'
-& "D:\deepsh\DeepSeek Harness.exe" test\run.mjs    # 19 条断言
-& "D:\deepsh\DeepSeek Harness.exe" test\demo.mjs   # 用 fixtures 渲染一份报告
+& "D:\deepsh\DeepSeek Harness.exe" test\run.mjs        # 19 条断言
+& "D:\deepsh\DeepSeek Harness.exe" test\demo.mjs       # 用 fixtures 渲染一份报告
+& "D:\deepsh\DeepSeek Harness.exe" test\selfcheck.mjs  # 挖 session 日志：分数稳定性、探针失败率、闭环派发
 ```
 
 `lib/index.js` 只消费宿主上下文（`ctx.commands`、`ctx.llm`），**不携带任何 `@deepseek-ai/*` 导入**——第三方插件从 profile 自己的包作用域解析，那里看不见宿主包。请求是手工构造的普通对象，探针直接读原始 `text-delta` 分块而非宿主装配器。

@@ -176,7 +176,7 @@ utility = quality − λ · (candidate tokens / max tokens among candidates)
 ## Known limitations
 
 1. **The rubric is a proxy**, not a success rate. v0 exists to test whether plans differ enough to predict execution.
-2. **Ranking is unstable run to run.** On repeated runs of the same task, the winner has changed every time: the rubric scores plan *shape*, and shape varies at least as much within one model as between models. Treat `/scout` as a way to compare how models reason, not as an automatic router.
+2. **Ranking is unstable run to run.** On repeated runs of the same task, the winner has changed every time: the rubric scores plan *shape*, and shape varies at least as much within one model as between models. A 9-run self-check (`test/selfcheck.mjs`) on one task measured mean within-model Q drift **0.45** vs mean between-model spread **0.26** — at that noise level the ranking carries no signal. The same check found deepseek models pinned at temperature 0 (±0.02 across runs) while glm-5.3 drifted 0.54, so determinism differs per provider even with `temperature: 0` sent. Treat `/scout` as a way to compare how models reason, not as an automatic router.
 3. **Unverified rows say so.** When the session cwd cannot be resolved, planned files are not checked; the NOTE cell reads `· unverified` and grounding stays neutral rather than awarding the bonus.
 4. **Probing costs money**: one call per candidate. `topK=4` is roughly 4 × (input + 500 tokens).
 5. **Tokenizers differ**: the estimate is a shared density heuristic, not a provider-exact count.
@@ -197,8 +197,9 @@ Pure logic (estimation, plan parsing, scoring, ranking, rendering) has no DSH de
 
 ```powershell
 $env:ELECTRON_RUN_AS_NODE='1'
-& "D:\deepsh\DeepSeek Harness.exe" test\run.mjs    # 19 assertions
-& "D:\deepsh\DeepSeek Harness.exe" test\demo.mjs   # renders a report from fixtures
+& "D:\deepsh\DeepSeek Harness.exe" test\run.mjs        # 19 assertions
+& "D:\deepsh\DeepSeek Harness.exe" test\demo.mjs       # renders a report from fixtures
+& "D:\deepsh\DeepSeek Harness.exe" test\selfcheck.mjs  # mines session logs: score stability, probe failures, dispatches
 ```
 
 `lib/index.js` consumes only the host context (`ctx.commands`, `ctx.llm`) and carries **no imports from `@deepseek-ai/*`** — third-party plugins are resolved from the profile's own package scope, where the host packages are not visible. Requests are hand-built plain objects and the probe reads raw `text-delta` chunks instead of a host assembler.
