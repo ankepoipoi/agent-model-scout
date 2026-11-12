@@ -133,11 +133,13 @@ utility = quality − λ · (candidate tokens / max tokens among candidates)
 ## Known limitations
 
 1. **The rubric is a proxy**, not a success rate. v0 exists to test whether plans differ enough to predict execution.
-2. **Probing costs money**: one call per candidate. `topK=4` is roughly 4 × (input + 500 tokens).
-3. **Tokenizers differ**: the estimate is a shared density heuristic, not a provider-exact count.
-4. **No capability filter yet**: a model whose context window cannot hold the session is still probed.
-5. **Switching costs cache**: crossing providers drops the prompt cache; v0 does not price that.
-6. **Probe requests are not in the session log**: only the decision is durable.
+2. **Ranking is unstable run to run.** On repeated runs of the same task, the winner has changed every time: the rubric scores plan *shape*, and shape varies at least as much within one model as between models. Treat `/scout` as a way to compare how models reason, not as an automatic router.
+3. **Unverified rows say so.** When the session cwd cannot be resolved, planned files are not checked; the NOTE cell reads `· unverified` and grounding stays neutral rather than awarding the bonus.
+4. **Probing costs money**: one call per candidate. `topK=4` is roughly 4 × (input + 500 tokens).
+5. **Tokenizers differ**: the estimate is a shared density heuristic, not a provider-exact count.
+6. **No capability filter yet**: a model whose context window cannot hold the session is still probed.
+7. **Switching costs cache**: crossing providers drops the prompt cache; v0 does not price that.
+8. **Probe requests are not in the session log**: only the decision is durable.
 
 ## Roadmap
 

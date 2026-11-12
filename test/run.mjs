@@ -213,6 +213,13 @@ test("buildRow rewards existing paths and punishes invented ones", () => {
   assert.equal(grounded.parts.grounding, 0.1);
   assert.equal(invented.parts.grounding, -0.2);
   assert.equal(unfiled.parts.grounding, 0);
+
+  // No predicate means nothing was checked: an unverified plan must not inherit
+  // the bonus just because the missing list came back empty.
+  const unverified = buildRow({ candidate: { provider: "p", model: "unverified" }, plan, taskTokens: 40 });
+  assert.equal(unverified.parts.grounding, 0);
+  assert.equal(unverified.groundingChecked, false);
+
   assert.ok(grounded.quality > invented.quality + 0.25, "invented paths must lose clearly");
 });
 
