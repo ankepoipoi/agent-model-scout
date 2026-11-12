@@ -76,20 +76,27 @@ Candidate resolution order: `--models` flag → `candidates` config → auto-dis
 
 ## Usage
 
+Bare `/scout` opens a wizard: it asks for the task, probes the candidates, then shows a picker whose card carries the full comparison table.
+
 ```text
+/scout
 /scout 把 config loader 改成支持 .toml，并补测试
-/scout 重构 session 存储层 --apply
+/scout 重构 session 存储层 --pick
 /scout 给 CLI 加 --json --dry
 /scout ... --models deepseek-official/deepseek-flash,acme/big --top 2
 ```
 
 | Flag | Effect |
 |---|---|
-| `--apply` | switch this agent onto the winning model (takes effect from the next step) |
+| *(no task)* | wizard: ask for the task, then offer the model picker |
+| `--pick` | probe the typed task, then offer the same picker |
+| `--apply` | switch onto the winning model without asking |
 | `--dry` | list the candidates that would be probed, spending nothing |
 | `--models a/b,c/d` | probe exactly these routes |
 | `--top N` | cap how many discovered candidates are probed |
 | `--lambda X` | cost weight for this run (0 = quality only, 1 = cost dominates) |
+
+The picker is rendered through `ctx.userQuestions.ask()`, the same service behind the `ask_user_question` tool, so it appears as a normal question card. On a surface without a question UI (headless), the wizard refuses and the flag-driven forms still work.
 
 `--apply` calls the native `agent.model.select()`, which is durable in the session projection and takes effect on the next step. The decision record is the command's own log entry plus the report text in `command/done`, so a replayed session still shows why the model changed.
 
