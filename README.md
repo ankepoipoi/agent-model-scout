@@ -2,9 +2,24 @@
 
 English | [简体中文](README.zh-CN.md)
 
-`/scout <task>` — probe every configured model with one cheap planning call, rank the plans by quality vs. estimated token cost, and optionally switch this agent onto the winner.
+`/scout <task>` — Probe every configured model with one cheap planning call, rank the plans by quality vs. estimated token cost, and optionally switch this agent onto the winner.
 
-Scout is a pre-flight check, not a router daemon: it gathers cheap intel (a plan), scores it locally, and lets you or the command make the call.
+Scout is a pre-flight check, not a router daemon: it gathers cheap intel (a plan), scores it locally, and lets you or the command make the call. It answers *"which model plans this task better for the money"*, not *"which model will finish it"*.
+
+## Features
+
+- **Multi-model probing**: Test all configured models on the same task with a single planning call
+- **Quality vs. cost scoring**: Rank models by utility (quality − λ·normalized cost)
+- **Interactive picker**: Choose a model or keep current one after seeing the results
+- **Reasoning effort selection**: For models that expose reasoning levels, pick execution intensity
+- **Re-probe optimization**: When top models are close, re-probe them and average the results
+- **Calibrated token estimation**: Uses real billing data to predict token usage
+- **Self-validation**: Built-in tests verify stability and accuracy
+- **Cordis plugin**: Integrates seamlessly with DeepSeek Harness
+
+## Status
+
+v0, manual trigger only. Learned priors, price tables, auto pre-flight, and mid-run escalation are deliberately out of scope (see [Roadmap](#roadmap)).
 
 ```text
 scout · 3 candidates · λ=0.50
