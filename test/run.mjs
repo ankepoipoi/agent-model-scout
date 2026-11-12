@@ -156,6 +156,15 @@ test("renderReport includes every candidate and the recommendation", () => {
   assert.match(text, /dry run/);
 });
 
+test("renderReport flags an empty plan instead of listing zero steps", () => {
+  const rows = rankRows(
+    [buildRow({ candidate: { provider: "p", model: "m" }, plan: normalizePlan({ est_turns: 8 }), taskTokens: 40 })],
+    0.5,
+  );
+  const text = renderReport({ task: "x", rows, lambda: 0.5 });
+  assert.match(text, /empty plan/);
+});
+
 test("renderReport renders probe failures without crashing", () => {
   const text = renderReport({
     task: "x",
