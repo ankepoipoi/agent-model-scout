@@ -265,7 +265,7 @@ test("renderReport renders probe failures without crashing", () => {
 });
 
 test("keep-current dispatch no longer shows the dry-run hint", () => {
-  const rows = [{ candidate: { provider: "p", model: "m" }, quality: 0.8, totalTokens: 1000, turns: 2, elapsedMs: 5, plan: { steps: ["a"], files: [] } }];
+  const rows = [{ candidate: { provider: "p", model: "m" }, quality: 0.8, totalTokens: 1000, turns: 2, utility: 0.5, elapsedMs: 5, plan: { steps: ["a"], files: [] } }];
   const dispatched = renderReport({ task: "x", rows, lambda: 0.5, dispatched: true, recommendation: "queued on the current model" });
   assert.ok(!dispatched.includes("dry run"), "task did run — the hint would be a lie");
   const dry = renderReport({ task: "x", rows, lambda: 0.5, recommendation: "recommend: p/m" });
