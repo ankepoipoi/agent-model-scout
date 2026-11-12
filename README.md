@@ -40,22 +40,55 @@ The model only ever supplies a plan. Everything that becomes a number is compute
 
 ## Install
 
-Requires a DeepSeek Harness profile with at least two configured models. Target profile in the examples is `desktop`; adjust if yours differs.
+Requires DeepSeek Harness with a profile that has at least two configured models. The examples target the `desktop` profile — adjust if yours differs. All commands run in PowerShell.
+
+### 1. Get the code
 
 ```powershell
-# 1. Close DeepSeek Harness
-# 2. Copy the package into the profile
+git clone https://github.com/ankepoipoi/agent-model-scout.git
+cd agent-model-scout
+```
+
+### 2. Copy the package into the profile
+
+Close DeepSeek Harness first, then:
+
+```powershell
 $dest = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\agent-model-scout"
 New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item -Recurse -Force .\package.json, .\lib $dest
-
-# 3. Append the composition entry (see cordis.patch.snippet.yml) to
-#    %USERPROFILE%\.dsh\profiles\desktop\cordis.patch.yml
-
-# 4. Restart DeepSeek Harness, then run:  /scout <task>
 ```
 
-Or run `.\install.ps1` (idempotent; does steps 2–3, `-DryRun` shows the plan first).
+Or run `.\install.ps1`, which does this step for you (idempotent; `-DryRun` shows the plan first).
+
+### 3. Register the plugin
+
+Append this entry to the **end** of `%USERPROFILE%\.dsh\profiles\desktop\cordis.patch.yml`:
+
+```yaml
+- insert:
+    - id: scout
+      name: "agent-model-scout"
+      config:
+        candidates: []            # explicit "provider/model" routes; empty = auto-discover
+        lambda: 0.5               # cost weight: 0 = quality only, 1 = cost dominates
+        topK: 4                   # max candidates probed when discovering
+        maxProbeTokens: 500       # output cap for one probe
+        probeTimeoutMs: 60000     # wall-clock budget for one probe
+        fixedOverheadTokens: 3000 # per-turn system prompt + tool schema cost
+```
+
+> `insert:` is required. A plain `- id: scout` entry patches an *existing* entry and is silently skipped when the id is not found.
+
+### 4. Restart and verify
+
+Restart DeepSeek Harness fully (quit from the tray, not just close the window), then run a zero-cost check:
+
+```text
+/scout any task here --dry
+```
+
+`--dry` lists the discovered candidates without probing — it spends nothing and proves the plugin is loaded. Drop `--dry` for the real run.
 
 The plugin declares no `Config` schema: it reads a plain object from the patch entry, so it does not couple to a `schemastery` version.
 

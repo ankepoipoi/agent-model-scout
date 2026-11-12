@@ -40,22 +40,55 @@ v0，仅手动触发。它回答的是*"哪个模型能用更少的钱把这个�
 
 ## 安装
 
-需要一个配置了至少两个模型的 DeepSeek Harness profile。示例中的目标 profile 是 `desktop`，不同的话自行调整。
+要求 DeepSeek Harness 的 profile 里配置了至少两个模型。示例以 `desktop` profile 为准，不同的话自行调整。以下命令都在 PowerShell 中运行。
+
+### 1. 获取代码
 
 ```powershell
-# 1. 关闭 DeepSeek Harness
-# 2. 把包复制进 profile
+git clone https://github.com/ankepoipoi/agent-model-scout.git
+cd agent-model-scout
+```
+
+### 2. 把包复制进 profile
+
+先完全关闭 DeepSeek Harness，然后：
+
+```powershell
 $dest = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\agent-model-scout"
 New-Item -ItemType Directory -Force $dest | Out-Null
 Copy-Item -Recurse -Force .\package.json, .\lib $dest
-
-# 3. 把组合条目（见 cordis.patch.snippet.yml）追加到
-#    %USERPROFILE%\.dsh\profiles\desktop\cordis.patch.yml
-
-# 4. 重启 DeepSeek Harness，然后运行：/scout <任务>
 ```
 
-或者直接运行 `.\install.ps1`（幂等；执行第 2–3 步，`-DryRun` 先展示将做的操作）。
+或直接运行 `.\install.ps1`，它会替你完成这一步（幂等；`-DryRun` 先展示将做的操作）。
+
+### 3. 注册插件
+
+把下面这个条目追加到 `%USERPROFILE%\.dsh\profiles\desktop\cordis.patch.yml` 的**末尾**：
+
+```yaml
+- insert:
+    - id: scout
+      name: "agent-model-scout"
+      config:
+        candidates: []            # 显式 "provider/model" 路由；为空 = 自动发现
+        lambda: 0.5               # 成本权重：0 只按质量排名，1 让成本主导
+        topK: 4                   # 自动发现时最多探测的候选数
+        maxProbeTokens: 500       # 单次探针的输出上限
+        probeTimeoutMs: 60000     # 单次探针的墙钟预算
+        fixedOverheadTokens: 3000 # 真实任务每轮的系统提示 + 工具 schema 开销
+```
+
+> `insert:` 不能省。直接写 `- id: scout` 是在给*已存在*的条目打补丁，id 找不到时会被静默跳过——插件根本不会加载。
+
+### 4. 重启并验证
+
+完全重启 DeepSeek Harness（从托盘退出，不是只关窗口），然后跑一个零成本检查：
+
+```text
+/scout 随便一个任务 --dry
+```
+
+`--dry` 只列出发现的候选、不发起任何探测——不花一分钱，还能证明插件已加载。去掉 `--dry` 就是真实运行。
 
 插件不声明 `Config` schema：它从 patch 条目读取普通对象，因此不与 `schemastery` 的版本耦合。
 
