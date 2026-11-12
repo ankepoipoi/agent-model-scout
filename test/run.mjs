@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { estimateTaskTokens, estimateTextTokens, formatTokens } from "../lib/estimate.js";
-import { buildRow, normalizePlan, parsePlan, qualityOf, rankRows } from "../lib/plan.js";
+import { buildRow, combineRows, normalizePlan, parsePlan, qualityOf, rankRows } from "../lib/plan.js";
 import { renderReport, truncate } from "../lib/render.js";
 
 let passed = 0;
@@ -139,6 +139,19 @@ test("rankRows prefers quality at low lambda and cheapness at high lambda", () =
 
   const costFirst = rankRows([cheap, strong], 1);
   assert.equal(costFirst[0].candidate.model, "cheap", "λ=1 must let cost dominate");
+});
+
+test("combineRows averages re-probe samples and records the spread", () => {
+  const candidate = { provider: "zai-coding-cn", model: "glm-5.3" };
+  const first = buildRow({ candidate, plan: normalizePlan({ plan: ["read a", "edit b"], est_turns: 2 }), taskTokens: 40 });
+  const second = buildRow({ candidate, plan: normalizePlan({ plan: ["read a", "edit b", "test c"], est_turns: 5 }), taskTokens: 40 });
+  const merged = combineRows(first, second);
+  assert.equal(merged.quality, (first.quality + second.quality) / 2);
+  assert.equal(merged.totalTokens, (first.totalTokens + second.totalTokens) / 2);
+  assert.equal(merged.qualitySpread, Math.abs(first.quality - second.quality));
+  assert.equal(merged.probes, 2);
+  assert.ok(merged.turns >= 1, "averaged turns stay at least 1");
+  assert.equal(merged.candidate, candidate, "identity is preserved for the picker");
 });
 
 test("renderReport includes every candidate and the recommendation", () => {

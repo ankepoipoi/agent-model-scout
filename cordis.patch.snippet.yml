@@ -19,5 +19,7 @@
         maxProbeTokens: 500
         # Wall-clock budget for one probe.
         probeTimeoutMs: 60000
+        # Re-probe the top-2 when their utility gap is below this; 0 disables.
+        reprobeGap: 0.15
         # Per-turn system prompt + tool schema cost assumed for the real task.
         fixedOverheadTokens: 3000

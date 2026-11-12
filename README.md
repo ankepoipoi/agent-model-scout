@@ -75,6 +75,7 @@ Append this entry to the **end** of `%USERPROFILE%\.dsh\profiles\desktop\cordis.
         topK: 4                   # max candidates probed when discovering
         maxProbeTokens: 500       # output cap for one probe
         probeTimeoutMs: 60000     # wall-clock budget for one probe
+        reprobeGap: 0.15          # re-probe the top-2 when their gap is below this
         fixedOverheadTokens: 3000 # per-turn system prompt + tool schema cost
 ```
 
@@ -104,6 +105,7 @@ The plugin declares no `Config` schema: it reads a plain object from the patch e
     maxProbeTokens: 500       # output cap for one probe
     probeTimeoutMs: 60000     # wall-clock budget for one probe
     probeTemperature: 0       # pin sampling so two runs are comparable
+    reprobeGap: 0.15          # re-probe the top-2 when their gap is below this; 0 disables
     fixedOverheadTokens: 3000 # per-turn system prompt + tool schema cost of the real task
 ```
 

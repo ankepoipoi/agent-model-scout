@@ -75,6 +75,7 @@ Copy-Item -Recurse -Force .\package.json, .\lib $dest
         topK: 4                   # 自动发现时最多探测的候选数
         maxProbeTokens: 500       # 单次探针的输出上限
         probeTimeoutMs: 60000     # 单次探针的墙钟预算
+        reprobeGap: 0.15          # 前两名分差小于该值时自动复测；0 关闭
         fixedOverheadTokens: 3000 # 真实任务每轮的系统提示 + 工具 schema 开销
 ```
 
@@ -104,6 +105,7 @@ Copy-Item -Recurse -Force .\package.json, .\lib $dest
     maxProbeTokens: 500       # 单次探针的输出上限
     probeTimeoutMs: 60000     # 单次探针的墙钟预算
     probeTemperature: 0       # 固定采样参数，让两次运行可比较
+    reprobeGap: 0.15          # 前两名分差小于该值时自动复测；0 关闭
     fixedOverheadTokens: 3000 # 真实任务每轮的系统提示 + 工具 schema 开销
 ```
 
