@@ -76,21 +76,20 @@ Candidate resolution order: `--models` flag → `candidates` config → auto-dis
 
 ## Usage
 
-Bare `/scout` opens a wizard: it asks for the task, probes the candidates, then shows a picker whose card carries the full comparison table.
+Every successful probe ends in a picker card — the table alone never switches anything.
 
 ```text
 /scout
 /scout 把 config loader 改成支持 .toml，并补测试
-/scout 重构 session 存储层 --pick
-/scout 给 CLI 加 --json --dry
+/scout 重构 session 存储层 --apply
 /scout ... --models deepseek-official/deepseek-flash,acme/big --top 2
 ```
 
 | Flag | Effect |
 |---|---|
-| *(no task)* | wizard: ask for the task, then offer the model picker |
-| `--pick` | probe the typed task, then offer the same picker |
-| `--apply` | switch onto the winning model without asking |
+| *(no task)* | ask for the task first, then probe, then pick |
+| *(task)* | probe it directly, then pick |
+| `--apply` | switch onto the winning model without asking (script mode) |
 | `--dry` | list the candidates that would be probed, spending nothing |
 | `--models a/b,c/d` | probe exactly these routes |
 | `--top N` | cap how many discovered candidates are probed |
