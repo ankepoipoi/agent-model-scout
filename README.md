@@ -68,6 +68,7 @@ The plugin declares no `Config` schema: it reads a plain object from the patch e
     topK: 4                   # max candidates probed when discovering
     maxProbeTokens: 500       # output cap for one probe
     probeTimeoutMs: 60000     # wall-clock budget for one probe
+    probeTemperature: 0       # pin sampling so two runs are comparable
     fixedOverheadTokens: 3000 # per-turn system prompt + tool schema cost of the real task
 ```
 
@@ -105,6 +106,9 @@ Candidate resolution order: `--models` flag → `candidates` config → auto-dis
 | risk | 0.05 | low full, medium half, high zero |
 | confidence | 0.05 | self-reported, deliberately the smallest term |
 | blockers | −0.10 | −0.05 each, capped at −0.10 |
+| grounding | +0.10 / −0.20 | every planned file exists on disk (+0.10); any missing (−0.20); no files listed (0) |
+
+Grounding outweighs every shape term on purpose: a plan that names files which do not exist is guessing. The check runs `fs.existsSync` against the session cwd, so absolute paths and cwd-relative paths both count.
 
 `scope` saturates at two files because most tasks legitimately touch one or two; an earlier version rewarded naming many files and pushed models toward inventing extra targets.
 

@@ -199,6 +199,23 @@ test("renderReport surfaces a higher-quality leader when value wins", () => {
   assert.match(text, /quality leader: p\/strong/);
 });
 
+test("buildRow rewards existing paths and punishes invented ones", () => {
+  const plan = normalizePlan({ plan: ["a", "b", "c", "d", "e", "f"], files: ["README.md"], est_turns: 3 });
+  const grounded = buildRow({ candidate: { provider: "p", model: "grounded" }, plan, taskTokens: 40, pathExists: () => true });
+  const invented = buildRow({ candidate: { provider: "p", model: "invented" }, plan, taskTokens: 40, pathExists: () => false });
+  const unfiled = buildRow({
+    candidate: { provider: "p", model: "unfiled" },
+    plan: normalizePlan({ plan: ["a", "b", "c"], files: [] }),
+    taskTokens: 40,
+    pathExists: () => true,
+  });
+
+  assert.equal(grounded.parts.grounding, 0.1);
+  assert.equal(invented.parts.grounding, -0.2);
+  assert.equal(unfiled.parts.grounding, 0);
+  assert.ok(grounded.quality > invented.quality + 0.25, "invented paths must lose clearly");
+});
+
 test("renderReport renders probe failures without crashing", () => {
   const text = renderReport({
     task: "x",
