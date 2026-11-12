@@ -76,7 +76,7 @@ Append this entry to the **end** of `%USERPROFILE%\.dsh\profiles\desktop\cordis.
         maxProbeTokens: 500       # output cap for one probe
         probeTimeoutMs: 60000     # wall-clock budget for one probe
         reprobeGap: 0.15          # re-probe the top-2 when their gap is below this
-        fixedOverheadTokens: 3000 # per-turn system prompt + tool schema cost
+        fixedOverheadTokens: 30000 # per-turn system prompt + tool schema cost
 ```
 
 > `insert:` is required. A plain `- id: scout` entry patches an *existing* entry and is silently skipped when the id is not found.
@@ -106,7 +106,7 @@ The plugin declares no `Config` schema: it reads a plain object from the patch e
     probeTimeoutMs: 60000     # wall-clock budget for one probe
     probeTemperature: 0       # pin sampling so two runs are comparable
     reprobeGap: 0.15          # re-probe the top-2 when their gap is below this; 0 disables
-    fixedOverheadTokens: 3000 # per-turn system prompt + tool schema cost of the real task
+    fixedOverheadTokens: 30000 # per-turn system prompt + tool schema cost of the real task
 ```
 
 Candidate resolution order: `--models` flag → `candidates` config → auto-discovery (`ctx.llm.listProviders()` + `listModels()`) → the agent's current model.
@@ -165,7 +165,7 @@ The loop re-sends the whole context every turn, so input cost grows quadraticall
 total ≈ (fixed + task)·turns + 1200·turns(turns+1)/2 + 500·turns
 ```
 
-`turns` is the plan's `est_turns`, floored by step count (`ceil(steps/3)`) — a six-step plan cannot execute in one turn, and self-reported turn counts are the least reliable field a probe returns.
+`turns` is the plan's `est_turns`, floored by step count (`turns >= steps`): calibration on dispatched turns showed every planned step tends to cost one call (5 steps → 5 calls). The per-turn fixed overhead (30,000) is likewise calibrated: the first two dispatched turns billed 36k–47k tokens per call — the original 3,000 assumption underestimated 7–9×. `test/selfcheck.mjs` section 4 re-runs this calibration (`actual/predicted`) whenever dispatched turns exist in the logs.
 
 Coefficients live at the top of `lib/estimate.js`. Text density uses a provider-neutral heuristic (CJK ≈ 0.6 tokens/char, ASCII ≈ 0.3 tokens/char) because a shared tokenizer would be wrong for every provider except one.
 

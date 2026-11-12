@@ -186,7 +186,7 @@ test("buildRow floors self-reported turns by step count", () => {
     taskTokens: 40,
   });
   assert.equal(one.turns, 1);
-  assert.equal(many.turns, 2, "six steps cannot run in one turn");
+  assert.equal(many.turns, 6, "six steps cost six calls — one call per step, per calibration");
   assert.ok(many.totalTokens > one.totalTokens);
 });
 

@@ -65,7 +65,7 @@ if ($patch -match '(?m)^\s*name:\s*"?agent-model-scout"?\s*$') {
         '        topK: 4'
         '        maxProbeTokens: 500'
         '        probeTimeoutMs: 60000'
-        '        fixedOverheadTokens: 3000'
+        '        fixedOverheadTokens: 30000'
     ) -join "`n"
     Add-Content -Path $patchPath -Value $entry -Encoding utf8
     Write-Host "appended patch entry."

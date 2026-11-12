@@ -76,7 +76,7 @@ Copy-Item -Recurse -Force .\package.json, .\lib $dest
         maxProbeTokens: 500       # 单次探针的输出上限
         probeTimeoutMs: 60000     # 单次探针的墙钟预算
         reprobeGap: 0.15          # 前两名分差小于该值时自动复测；0 关闭
-        fixedOverheadTokens: 3000 # 真实任务每轮的系统提示 + 工具 schema 开销
+        fixedOverheadTokens: 30000 # 真实任务每轮的系统提示 + 工具 schema 开销
 ```
 
 > `insert:` 不能省。直接写 `- id: scout` 是在给*已存在*的条目打补丁，id 找不到时会被静默跳过——插件根本不会加载。
@@ -106,7 +106,7 @@ Copy-Item -Recurse -Force .\package.json, .\lib $dest
     probeTimeoutMs: 60000     # 单次探针的墙钟预算
     probeTemperature: 0       # 固定采样参数，让两次运行可比较
     reprobeGap: 0.15          # 前两名分差小于该值时自动复测；0 关闭
-    fixedOverheadTokens: 3000 # 真实任务每轮的系统提示 + 工具 schema 开销
+    fixedOverheadTokens: 30000 # 真实任务每轮的系统提示 + 工具 schema 开销
 ```
 
 候选解析顺序：`--models` 标志 → `candidates` 配置 → 自动发现（`ctx.llm.listProviders()` + `listModels()`）→ agent 当前模型。
@@ -165,7 +165,7 @@ Copy-Item -Recurse -Force .\package.json, .\lib $dest
 total ≈ (fixed + task)·turns + 1200·turns(turns+1)/2 + 500·turns
 ```
 
-`turns` 取计划自报的 `est_turns`，并用步骤数（`ceil(steps/3)`）托底——六步的计划不可能一轮跑完，而自报轮数是探针返回字段里最不可靠的一个。
+`turns` 取计划自报的 `est_turns`，并用步数托底（`turns >= steps`）：对已派发任务的校准显示，计划里的每一步往往就是一次调用（5 步 → 5 次调用）。每轮固定开销（30,000）同样来自校准：前两个派发任务的实际计费是每次调用 36k–47k token——最初 3,000 的假设系统性低估了 7–9 倍。日志里有派发任务时，`test/selfcheck.mjs` 第 4 节会自动重算这个校准比（`actual/predicted`）。
 
 系数都在 `lib/estimate.js` 顶部。文本密度用 provider 中立的启发式（CJK ≈ 0.6 token/字符，ASCII ≈ 0.3 token/字符），因为共用一个 tokenizer 对除一家之外的所有 provider 都是错的。
 

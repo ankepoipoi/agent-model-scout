@@ -22,4 +22,5 @@
         # Re-probe the top-2 when their utility gap is below this; 0 disables.
         reprobeGap: 0.15
         # Per-turn system prompt + tool schema cost assumed for the real task.
-        fixedOverheadTokens: 3000
+        # Calibrated against dispatched turns (real billing: ~36-47k/call).
+        fixedOverheadTokens: 30000

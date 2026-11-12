@@ -49,15 +49,19 @@ const files = [];
 })(root);
 
 const events = [];
+let fileIndex = 0;
 for (const path of files) {
+  fileIndex += 1;
   try {
     for (const line of decodeAll(readFileSync(path)).split("\n")) {
       if (!line.trim()) continue;
-      try { events.push(JSON.parse(line)); } catch { /* torn tail line */ }
+      try { events.push({ ...JSON.parse(line), file: fileIndex }); } catch { /* torn tail line */ }
     }
   } catch { /* undecodable file */ }
 }
-events.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) ?? a.time - b.time);
+// Epoch time is the only key monotonic across files: seq and turn numbers
+// both restart per session, so they must never order or key anything alone.
+events.sort((a, b) => a.time - b.time);
 
 // ---------- collect scout runs ----------
 const dones = new Map(); // commandId -> report text
@@ -158,18 +162,78 @@ for (const [provider, { total, failed }] of providerStats) {
 
 // ---------- 3. dispatched tasks: predicted vs actual ----------
 console.log("\n=== 3. closed-loop dispatches (predicted vs actual) ===");
-const userMessages = events.filter((event) => event.type === "user/message");
+const turnStarts = events.filter((event) => event.type === "turn/start");
 const stepStarts = events.filter((event) => event.type === "step/start");
+
+// Per-turn real usage lives on assistant/message events (data.usage), the
+// same source read_token_usage.js counts from.
+const usageByTurn = new Map();
+for (const event of events) {
+  if (event.type !== "assistant/message" || !event.data?.usage) continue;
+  const key = `${event.file}:${event.data.turn}`;
+  const u = event.data.usage;
+  const bucket = usageByTurn.get(key) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0, turn: event.data.turn };
+  bucket.input += u.inputTokens ?? 0;
+  bucket.output += u.outputTokens ?? 0;
+  bucket.cacheRead += u.cacheReadTokens ?? 0;
+  bucket.cacheWrite += u.cacheWriteTokens ?? 0;
+  bucket.calls += 1;
+  usageByTurn.set(key, bucket);
+}
+
+const modelSelections = events.filter((event) => event.type === "model/selection");
+const userMessages = events.filter((event) => event.type === "user/message");
+
 let dispatchCount = 0;
+const calibrations = [];
 for (const run of probed) {
   const dispatched = userMessages.find((event) =>
     event.time > run.time && event.time < run.time + 5 * 60_000 &&
     (event.data?.content ?? []).some((block) => block.type === "text" && block.text === run.task));
   if (!dispatched) continue;
+  const turnStart = turnStarts.find((event) => event.file === dispatched.file && event.time >= dispatched.time);
+  if (!turnStart) continue;
+  const turn = turnStart.data.turn;
+  const steps = stepStarts.filter((event) => event.file === turnStart.file && event.data?.turn === turn).length;
+  const usage = usageByTurn.get(`${turnStart.file}:${turn}`);
+  const selection = [...modelSelections].reverse().find((event) => event.file === dispatched.file && event.time <= turnStart.time);
   dispatchCount += 1;
-  const turn = dispatched.data?.turn ?? dispatched.data?.message?.turn;
-  const steps = stepStarts.filter((event) => event.data?.turn === turn).length;
-  const predicted = run.winner ? run.winner.steps : undefined;
-  console.log(`  task "${run.task.slice(0, 30)}..." -> turn ${turn}: predicted ${predicted} steps, actual ${steps} steps`);
+  const predicted = run.winner;
+  console.log(`  task "${run.task.slice(0, 30)}..." -> turn ${turn} on ${selection ? `${selection.data.provider}/${selection.data.model}` : "?"}`);
+  console.log(`    predicted: ${predicted ? `${predicted.steps} steps, ${predicted.estTokensK}k tokens (${predicted.route})` : "n/a"}`);
+  console.log(`    actual   : ${steps} steps${usage ? `, ${(usage.input + usage.cacheRead + usage.cacheWrite + usage.output).toLocaleString()} billed tokens over ${usage.calls} calls` : ", usage not logged"}`);
+  if (predicted && usage) {
+    const actualK = (usage.input + usage.cacheRead + usage.cacheWrite + usage.output) / 1000;
+    const predictedK = Number(predicted.estTokensK);
+    calibrations.push({ task: run.task, route: predicted.route, predictedK, actualK, ratio: actualK / predictedK });
+  }
 }
 if (dispatchCount === 0) console.log("  (no dispatched executions in the logs yet — closed loop shipped after the last logged run)");
+
+// ---------- 4. estimator calibration ----------
+console.log("\n=== 4. token estimator calibration (dispatched tasks) ===");
+if (calibrations.length === 0) {
+  console.log("  (needs dispatched turns with logged usage)");
+} else {
+  for (const calibration of calibrations) {
+    console.log(`  ${calibration.route.padEnd(34)} predicted ${calibration.predictedK}k vs actual ${calibration.actualK.toFixed(1)}k  (actual/predicted ${calibration.ratio.toFixed(2)}x)  "${calibration.task.slice(0, 24)}..."`);
+  }
+  const meanRatio = calibrations.reduce((sum, value) => sum + value.ratio, 0) / calibrations.length;
+  console.log(`  -> mean actual/predicted ${meanRatio.toFixed(2)}x ${meanRatio > 1.5 ? "[underestimates]" : meanRatio < 0.67 ? "[overestimates]" : "[roughly calibrated]"}`);
+}
+
+// Session-wide totals, same numbers read_token_usage.js prints.
+console.log("\n=== 5. session-wide usage ===");
+{
+  const totals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
+  for (const bucket of usageByTurn.values()) {
+    totals.input += bucket.input;
+    totals.output += bucket.output;
+    totals.cacheRead += bucket.cacheRead;
+    totals.cacheWrite += bucket.cacheWrite;
+    totals.calls += bucket.calls;
+  }
+  const billed = totals.input + totals.cacheRead + totals.cacheWrite + totals.output;
+  console.log(`  calls ${totals.calls} · uncached input ${totals.input.toLocaleString()} · cache read ${totals.cacheRead.toLocaleString()} · cache write ${totals.cacheWrite.toLocaleString()} · output ${totals.output.toLocaleString()}`);
+  console.log(`  billed total ${billed.toLocaleString()} tokens`);
+}
