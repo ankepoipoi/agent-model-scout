@@ -6,14 +6,14 @@ Scout is a pre-flight check, not a router daemon: it gathers cheap intel (a plan
 
 ```text
 scout · 3 candidates · λ=0.50
-task: 把 config loader 改成支持 .toml，并补测试
+task: make the config loader support .toml and add tests
 
   #  MODEL                              Q     EST.TOK  U      TIME   NOTE
   1  deepseek-official/deepseek-flash   0.74  58k      0.61   3.1s   4 steps, 2 files
   2  acme/big                           0.90  220k     0.40   5.7s   6 steps, 5 files
   3  acme/tiny                          0.11  18k      0.07   1.2s   1 step, 0 files
 
-  top plan: 1) 读 src/config/loader.ts  2) 在 parseConfig() 里加 toml 分支 …
+  top plan: 1) read src/config/loader.ts  2) add a toml branch inside parseConfig() …
   files: src/config/loader.ts, test/loader.test.ts
 
   ▸ recommend: deepseek-official/deepseek-flash — quality 0.74, est. 58k tokens (7 turns)
@@ -80,8 +80,8 @@ Every successful probe ends in a picker card, and a picked model runs the task i
 
 ```text
 /scout
-/scout 把 config loader 改成支持 .toml，并补测试
-/scout 重构 session 存储层 --apply
+/scout make the config loader support .toml and add tests
+/scout refactor the session storage layer --apply
 /scout ... --models deepseek-official/deepseek-flash,acme/big --top 2
 ```
 
@@ -95,7 +95,7 @@ Every successful probe ends in a picker card, and a picked model runs the task i
 | `--top N` | cap how many discovered candidates are probed |
 | `--lambda X` | cost weight for this run (0 = quality only, 1 = cost dominates) |
 
-Picking `保持当前模型` runs the task without switching; dismissing the card runs nothing. The hand-off is `agent.followup()` with a frozen user message, so the task enters the session log as an ordinary turn and the recorded model selection takes effect on that turn's first step.
+Picking the keep-current option runs the task without switching; dismissing the card runs nothing. The hand-off is `agent.followup()` with a frozen user message, so the task enters the session log as an ordinary turn and the recorded model selection takes effect on that turn's first step.
 
 The picker is rendered through `ctx.userQuestions.ask()`, the same service behind the `ask_user_question` tool, so it appears as a normal question card. On a surface without a question UI (headless), the wizard refuses and the flag-driven forms still work.
 
