@@ -1,19 +1,23 @@
 # Append this entry to the END of
 #   %USERPROFILE%\.dsh\profiles\desktop\cordis.patch.yml
-# (the file is a YAML array; do not add it inside another entry).
-- id: scout
-  name: "agent-model-scout"
-  config:
-    # Explicit candidates, "provider/model". Leave empty to auto-discover every
-    # configured provider's model catalog at invocation time.
-    candidates: []
-    # Cost weight: 0 = rank by plan quality only, 1 = cost dominates.
-    lambda: 0.5
-    # How many discovered candidates to probe per invocation.
-    topK: 4
-    # max_tokens for one probe reply.
-    maxProbeTokens: 500
-    # Wall-clock budget for one probe.
-    probeTimeoutMs: 60000
-    # Per-turn system prompt + tool schema cost assumed for the real task.
-    fixedOverheadTokens: 3000
+#
+# `insert:` is required: a plain `- id: scout` patch targets an EXISTING entry
+# and is silently skipped when the id is not found. Without a parent `id`,
+# `insert` appends to the root entry list.
+- insert:
+    - id: scout
+      name: "agent-model-scout"
+      config:
+        # Explicit candidates, "provider/model". Leave empty to auto-discover every
+        # configured provider's model catalog at invocation time.
+        candidates: []
+        # Cost weight: 0 = rank by plan quality only, 1 = cost dominates.
+        lambda: 0.5
+        # How many discovered candidates to probe per invocation.
+        topK: 4
+        # max_tokens for one probe reply.
+        maxProbeTokens: 500
+        # Wall-clock budget for one probe.
+        probeTimeoutMs: 60000
+        # Per-turn system prompt + tool schema cost assumed for the real task.
+        fixedOverheadTokens: 3000

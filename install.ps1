@@ -56,15 +56,16 @@ if ($patch -match '(?m)^\s*name:\s*"?agent-model-scout"?\s*$') {
 } else {
     $entry = @(
         ''
-        '- id: scout'
-        '  name: "agent-model-scout"'
-        '  config:'
-        '    candidates: []'
-        '    lambda: 0.5'
-        '    topK: 4'
-        '    maxProbeTokens: 500'
-        '    probeTimeoutMs: 60000'
-        '    fixedOverheadTokens: 3000'
+        '- insert:'
+        '    - id: scout'
+        '      name: "agent-model-scout"'
+        '      config:'
+        '        candidates: []'
+        '        lambda: 0.5'
+        '        topK: 4'
+        '        maxProbeTokens: 500'
+        '        probeTimeoutMs: 60000'
+        '        fixedOverheadTokens: 3000'
     ) -join "`n"
     Add-Content -Path $patchPath -Value $entry -Encoding utf8
     Write-Host "appended patch entry."

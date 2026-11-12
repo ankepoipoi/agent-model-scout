@@ -147,7 +147,7 @@ $env:ELECTRON_RUN_AS_NODE='1'
 & "D:\deepsh\DeepSeek Harness.exe" test\demo.mjs   # renders a report from fixtures
 ```
 
-`lib/index.js` is the only file that imports the host (`createUserMessage`, `BlockAssembler` from `@deepseek-ai/dsh-llm`), typed against `0.2.2-rc.1`.
+`lib/index.js` consumes only the host context (`ctx.commands`, `ctx.llm`) and carries **no imports from `@deepseek-ai/*`** — third-party plugins are resolved from the profile's own package scope, where the host packages are not visible. Requests are hand-built plain objects and the probe reads raw `text-delta` chunks instead of a host assembler.
 
 ## Publishing
 
